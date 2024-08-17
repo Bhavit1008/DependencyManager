@@ -6,6 +6,7 @@ import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 
+import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.transform.OutputKeys;
@@ -14,6 +15,8 @@ import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
 import java.io.File;
+import java.io.FileWriter;
+import java.io.StringWriter;
 
 @SpringBootApplication
 public class ManagerApplication {
@@ -56,7 +59,6 @@ public class ManagerApplication {
 		Node parentNode = parentList.item(0);
 		NodeList dependencies = parentNode.getChildNodes();
 		boolean dependencyUpdated = false;
-		boolean dependencyAdded = false;
 		boolean dependencyDeleted = false;
 
 		for (int i = 0; i < dependencies.getLength(); i++) {
@@ -68,7 +70,7 @@ public class ManagerApplication {
 			NodeList childNodes = node.getChildNodes();
 			String currentGroupId = null;
 			String currentArtifactId = null;
-			Node versionNode = null;
+			Element versionElement = null;
 
 			for (int j = 0; j < childNodes.getLength(); j++) {
 				Node child = childNodes.item(j);
@@ -77,7 +79,7 @@ public class ManagerApplication {
 				} else if (child.getNodeName().equals("artifactId")) {
 					currentArtifactId = child.getTextContent();
 				} else if (child.getNodeName().equals("version")) {
-					versionNode = child;
+					versionElement = (Element) child;
 				}
 			}
 
@@ -85,21 +87,23 @@ public class ManagerApplication {
 				if (deleteIfVersionNull && newVersion == null) {
 					parentNode.removeChild(node);
 					dependencyDeleted = true;
-				} else if (versionNode != null) {
-					versionNode.setTextContent(newVersion);
+				} else {
+					if (versionElement != null) {
+						versionElement.setTextContent(newVersion);
+					} else if (newVersion != null) {
+						// Create and append version element if it's missing
+						versionElement = doc.createElement("version");
+						versionElement.setTextContent(newVersion);
+						node.appendChild(versionElement);
+					}
 					dependencyUpdated = true;
-				} else if (addIfNotExists) {
-					Element versionElement = doc.createElement("version");
-					versionElement.setTextContent(newVersion);
-					node.appendChild(versionElement);
-					dependencyAdded = true;
 				}
-				break;
+				return dependencyUpdated || dependencyDeleted;
 			}
 		}
 
 		// Add new dependency if not found and not deleted
-		if (!dependencyUpdated && !dependencyDeleted && addIfNotExists) {
+		if (addIfNotExists && !dependencyDeleted) {
 			Element dependencyElement = doc.createElement("dependency");
 
 			Element groupIdElement = doc.createElement("groupId");
@@ -110,15 +114,17 @@ public class ManagerApplication {
 			artifactIdElement.setTextContent(artifactId);
 			dependencyElement.appendChild(artifactIdElement);
 
-			Element versionElement = doc.createElement("version");
-			versionElement.setTextContent(newVersion);
-			dependencyElement.appendChild(versionElement);
+			if (newVersion != null) {
+				Element versionElement = doc.createElement("version");
+				versionElement.setTextContent(newVersion);
+				dependencyElement.appendChild(versionElement);
+			}
 
 			parentNode.appendChild(dependencyElement);
-			dependencyAdded = true;
+			dependencyUpdated = true;
 		}
 
-		return dependencyUpdated || dependencyAdded || dependencyDeleted;
+		return dependencyUpdated || dependencyDeleted;
 	}
 
 	public static void excludeTransitiveDependency(File pomFile, String parentGroupId, String parentArtifactId, String excludeGroupId, String excludeArtifactId) {
@@ -166,19 +172,47 @@ public class ManagerApplication {
 						node.appendChild(exclusionsElement);
 					}
 
-					Element exclusionElement = doc.createElement("exclusion");
+					boolean exclusionExists = false;
+					NodeList exclusionList = exclusionsElement.getChildNodes();
+					for (int k = 0; k < exclusionList.getLength(); k++) {
+						Node exclusionNode = exclusionList.item(k);
+						if (exclusionNode.getNodeType() != Node.ELEMENT_NODE || !exclusionNode.getNodeName().equals("exclusion")) {
+							continue;
+						}
 
-					Element excludeGroupIdElement = doc.createElement("groupId");
-					excludeGroupIdElement.setTextContent(excludeGroupId);
-					exclusionElement.appendChild(excludeGroupIdElement);
+						NodeList exclusionChildren = exclusionNode.getChildNodes();
+						String exclusionGroupId = null;
+						String exclusionArtifactId = null;
 
-					Element excludeArtifactIdElement = doc.createElement("artifactId");
-					excludeArtifactIdElement.setTextContent(excludeArtifactId);
-					exclusionElement.appendChild(excludeArtifactIdElement);
+						for (int l = 0; l < exclusionChildren.getLength(); l++) {
+							Node exclusionChild = exclusionChildren.item(l);
+							if (exclusionChild.getNodeName().equals("groupId")) {
+								exclusionGroupId = exclusionChild.getTextContent();
+							} else if (exclusionChild.getNodeName().equals("artifactId")) {
+								exclusionArtifactId = exclusionChild.getTextContent();
+							}
+						}
 
-					exclusionsElement.appendChild(exclusionElement);
-					exclusionAdded = true;
+						if (excludeGroupId.equals(exclusionGroupId) && excludeArtifactId.equals(exclusionArtifactId)) {
+							exclusionExists = true;
+							break;
+						}
+					}
 
+					if (!exclusionExists) {
+						Element exclusionElement = doc.createElement("exclusion");
+
+						Element excludeGroupIdElement = doc.createElement("groupId");
+						excludeGroupIdElement.setTextContent(excludeGroupId);
+						exclusionElement.appendChild(excludeGroupIdElement);
+
+						Element excludeArtifactIdElement = doc.createElement("artifactId");
+						excludeArtifactIdElement.setTextContent(excludeArtifactId);
+						exclusionElement.appendChild(excludeArtifactIdElement);
+
+						exclusionsElement.appendChild(exclusionElement);
+						exclusionAdded = true;
+					}
 					break;
 				}
 			}
@@ -188,9 +222,12 @@ public class ManagerApplication {
 				TransformerFactory transformerFactory = TransformerFactory.newInstance();
 				Transformer transformer = transformerFactory.newTransformer();
 				transformer.setOutputProperty(OutputKeys.INDENT, "yes");
+				transformer.setOutputProperty("{http://xml.apache.org/xslt}indent-amount", "4");
+				transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "no");
 				DOMSource source = new DOMSource(doc);
 				StreamResult result = new StreamResult(pomFile);
 				transformer.transform(source, result);
+
 
 				System.out.println("Excluded transitive dependency in pom.xml: " + pomFile.getAbsolutePath());
 			}
@@ -240,9 +277,9 @@ public class ManagerApplication {
 				}
 
 				if (parentGroupId.equals(currentGroupId) && parentArtifactId.equals(currentArtifactId) && exclusionsElement != null) {
-					NodeList exclusions = exclusionsElement.getChildNodes();
-					for (int j = 0; j < exclusions.getLength(); j++) {
-						Node exclusionNode = exclusions.item(j);
+					NodeList exclusionList = exclusionsElement.getChildNodes();
+					for (int k = 0; k < exclusionList.getLength(); k++) {
+						Node exclusionNode = exclusionList.item(k);
 						if (exclusionNode.getNodeType() != Node.ELEMENT_NODE || !exclusionNode.getNodeName().equals("exclusion")) {
 							continue;
 						}
@@ -251,8 +288,8 @@ public class ManagerApplication {
 						String exclusionGroupId = null;
 						String exclusionArtifactId = null;
 
-						for (int k = 0; k < exclusionChildren.getLength(); k++) {
-							Node exclusionChild = exclusionChildren.item(k);
+						for (int l = 0; l < exclusionChildren.getLength(); l++) {
+							Node exclusionChild = exclusionChildren.item(l);
 							if (exclusionChild.getNodeName().equals("groupId")) {
 								exclusionGroupId = exclusionChild.getTextContent();
 							} else if (exclusionChild.getNodeName().equals("artifactId")) {
@@ -266,23 +303,46 @@ public class ManagerApplication {
 							break;
 						}
 					}
-				}
-
-				if (exclusionRemoved && exclusionsElement != null && !exclusionsElement.hasChildNodes()) {
-					node.removeChild(exclusionsElement);
+					break;
 				}
 			}
 
-			// Save changes
+			// Remove the <exclusions> element if it has no children
 			if (exclusionRemoved) {
+				for (int i = 0; i < dependencies.getLength(); i++) {
+					Node node = dependencies.item(i);
+					if (node.getNodeType() != Node.ELEMENT_NODE || !node.getNodeName().equals("dependency")) {
+						continue;
+					}
+
+					NodeList childNodes = node.getChildNodes();
+					for (int j = 0; j < childNodes.getLength(); j++) {
+						Node child = childNodes.item(j);
+						if (child.getNodeName().equals("exclusions") && !((Element) child).hasChildNodes()) {
+							node.removeChild(child);
+							break;
+						}
+					}
+				}
+
+				// Save changes
 				TransformerFactory transformerFactory = TransformerFactory.newInstance();
 				Transformer transformer = transformerFactory.newTransformer();
 				transformer.setOutputProperty(OutputKeys.INDENT, "yes");
+				transformerFactory.setAttribute("indent-number", 2);
+				transformerFactory.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+				transformerFactory.setAttribute(XMLConstants.ACCESS_EXTERNAL_STYLESHEET, "");
 				DOMSource source = new DOMSource(doc);
-				StreamResult result = new StreamResult(pomFile);
+				StringWriter writer = new StringWriter();
+				StreamResult result = new StreamResult(writer);
+
 				transformer.transform(source, result);
 
-				System.out.println("Removed exclusion of transitive dependency in pom.xml: " + pomFile.getAbsolutePath());
+				// Write the formatted XML back to the file
+				try (FileWriter fileWriter = new FileWriter(pomFile)) {
+					fileWriter.write(writer.toString());
+				}
+				System.out.println("Removed exclusion from pom.xml: " + pomFile.getAbsolutePath());
 			}
 
 		} catch (Exception e) {
@@ -321,7 +381,7 @@ public class ManagerApplication {
 		boolean deleteIfVersionNull = true;
 		String excludeGroupId = "org.springframework.boot";
 		String excludeArtifactId = "spring-boot-starter-logging";
-		boolean removeExclusion = false; // Set to true if you want to remove the exclusion
+		boolean removeExclusion = true; // Set to true if you want to remove the exclusion
 
 		processProject(new File(projectDirectory), groupId, artifactId, newVersion, addIfNotExists, deleteIfVersionNull, excludeGroupId, excludeArtifactId, removeExclusion);
 	}
