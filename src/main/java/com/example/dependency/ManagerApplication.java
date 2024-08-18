@@ -14,6 +14,7 @@ import javax.xml.transform.Transformer;
 import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
+import javax.xml.transform.stream.StreamSource;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.StringWriter;
@@ -36,12 +37,15 @@ public class ManagerApplication {
 			// Save changes if any updates occurred
 			if (updated) {
 				TransformerFactory transformerFactory = TransformerFactory.newInstance();
-				Transformer transformer = transformerFactory.newTransformer();
+				Transformer transformer = transformerFactory.newTransformer(new StreamSource(new File("F:/dependency/dependency/src/main/resources/stripspace.xml")));
 				transformer.setOutputProperty(OutputKeys.INDENT, "yes");
+				transformerFactory.setAttribute("indent-number", 0);
+				transformerFactory.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+				transformerFactory.setAttribute(XMLConstants.ACCESS_EXTERNAL_STYLESHEET, "");
 				DOMSource source = new DOMSource(doc);
 				StreamResult result = new StreamResult(pomFile);
 				transformer.transform(source, result);
-
+//F:\dependency\dependency\src\main\resources\stripspace.xml
 				System.out.println("Updated pom.xml: " + pomFile.getAbsolutePath());
 			}
 
@@ -220,10 +224,13 @@ public class ManagerApplication {
 			// Save changes
 			if (exclusionAdded) {
 				TransformerFactory transformerFactory = TransformerFactory.newInstance();
-				Transformer transformer = transformerFactory.newTransformer();
+				Transformer transformer = transformerFactory.newTransformer(new StreamSource(new File("F:/dependency/dependency/src/main/resources/stripspace.xml")));
 				transformer.setOutputProperty(OutputKeys.INDENT, "yes");
-				transformer.setOutputProperty("{http://xml.apache.org/xslt}indent-amount", "4");
-				transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "no");
+				transformer.setOutputProperty("{http://xml.apache.org/xslt}indent-amount", "1");
+				transformer.setOutputProperty(OutputKeys.INDENT, "yes");
+				transformerFactory.setAttribute("indent-number", 0);
+				transformerFactory.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+				transformerFactory.setAttribute(XMLConstants.ACCESS_EXTERNAL_STYLESHEET, "");
 				DOMSource source = new DOMSource(doc);
 				StreamResult result = new StreamResult(pomFile);
 				transformer.transform(source, result);
@@ -327,9 +334,9 @@ public class ManagerApplication {
 
 				// Save changes
 				TransformerFactory transformerFactory = TransformerFactory.newInstance();
-				Transformer transformer = transformerFactory.newTransformer();
+				Transformer transformer = transformerFactory.newTransformer(new StreamSource(new File("F:/dependency/dependency/src/main/resources/stripspace.xml")));
 				transformer.setOutputProperty(OutputKeys.INDENT, "yes");
-				transformerFactory.setAttribute("indent-number", 2);
+				transformerFactory.setAttribute("indent-number", 0);
 				transformerFactory.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
 				transformerFactory.setAttribute(XMLConstants.ACCESS_EXTERNAL_STYLESHEET, "");
 				DOMSource source = new DOMSource(doc);
@@ -376,9 +383,9 @@ public class ManagerApplication {
 		String projectDirectory = "F:/server";
 		String groupId = "org.springframework.boot";
 		String artifactId = "spring-boot-starter-web";
-		String newVersion = "2.5.5";  // Set to null if you want to delete the dependency
+		String newVersion = "Bhavit";  // Set to null if you want to delete the dependency
 		boolean addIfNotExists = true;
-		boolean deleteIfVersionNull = true;
+		boolean deleteIfVersionNull = false;
 		String excludeGroupId = "org.springframework.boot";
 		String excludeArtifactId = "spring-boot-starter-logging";
 		boolean removeExclusion = true; // Set to true if you want to remove the exclusion
